@@ -9,7 +9,6 @@ on:
 env:
   PYTHON_VERSION: "3.10"
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-and-push:
@@ -33,10 +32,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata and tag
+      # GHCR requires repository name to be lowercase
+      - name: Extract metadata and tag (lowercase for GHCR)
         id: meta
         run: |
-          echo "tags=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+          IMAGE_LC=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          TAG="${{ env.REGISTRY }}/${IMAGE_LC}:${{ github.sha }}"
+          echo "tags=${TAG}" >> $GITHUB_OUTPUT
           echo "sha=${{ github.sha }}" >> $GITHUB_OUTPUT
 
       - name: Build and push
@@ -44,7 +46,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -67,7 +69,7 @@ jobs:
 
       - name: Deploy new image
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          IMAGE="${{ needs.build-and-push.outputs.image_tag }}"
           kubectl set image deployment/staging-app app=$IMAGE -n staging --record
           kubectl rollout status deployment/staging-app -n staging --timeout=120s
 
